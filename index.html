@@ -1,0 +1,243 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="robots" content="noindex,nofollow">
+<title>共同営業台帳</title>
+<style>
+:root{
+  --bg:#EDEFF3;--surface:#FFFFFF;--ink:#141922;--muted:#5C6675;--line:#D5DAE3;
+  --accent:#1F4FD8;--accent-ink:#FFFFFF;--ok:#1E7F5C;--warn:#B7791F;--bad:#B3261E;--wait:#6B5BA8;
+  --font:system-ui,-apple-system,"Hiragino Sans","Yu Gothic",sans-serif;
+  --mono:ui-monospace,SFMono-Regular,Menlo,monospace;
+}
+@media (prefers-color-scheme:dark){
+  :root:not([data-theme="light"]){
+    --bg:#0D1016;--surface:#161A22;--ink:#E8ECF3;--muted:#98A2B3;--line:#262C38;
+    --accent:#7C9CFF;--accent-ink:#0D1016;--ok:#4CC38A;--warn:#E5B04A;--bad:#FF8A80;--wait:#B4A6F0;color-scheme:dark;
+  }
+}
+*{box-sizing:border-box}
+[hidden]{display:none!important}
+body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.6 var(--font);padding:12px 16px 80px;-webkit-text-size-adjust:100%}
+button{font:inherit;color:inherit;cursor:pointer}
+input,select,textarea{font:inherit;font-size:16px;color:var(--ink)}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.wrap{max-width:720px;margin-inline:auto;display:grid;gap:14px;min-width:0}
+header{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+h1{margin:0;font:700 20px var(--mono)}
+.who{margin-left:auto;display:flex;align-items:center;gap:8px;font-size:12px;color:var(--muted)}
+.btn{border:1px solid var(--line);background:var(--surface);border-radius:10px;padding:6px 14px;font-weight:700;font-size:13.5px}
+.btn.pri{background:var(--accent);color:var(--accent-ink);border-color:var(--accent)}
+.login{background:var(--surface);border:1px solid var(--line);border-radius:16px;padding:28px 18px;display:grid;gap:14px;justify-items:start}
+.login p{margin:0;color:var(--muted);font-size:13.5px}
+.err{color:var(--bad);font-size:13px;white-space:pre-wrap}
+.chips{display:flex;gap:8px;overflow-x:auto;padding-bottom:2px}
+.chip{flex:0 0 auto;border:1px solid var(--line);background:var(--surface);border-radius:99px;padding:5px 14px;font-size:13px;white-space:nowrap}
+.chip[aria-pressed="true"]{background:var(--accent);color:var(--accent-ink);border-color:var(--accent)}
+.chip .c{margin-left:6px;font:11.5px var(--mono);opacity:.85}
+.tools{display:flex;gap:8px}
+.tools input{flex:1;min-width:0;border:1px solid var(--line);border-radius:10px;background:var(--surface);padding:8px 12px}
+.card{background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:12px 14px;display:grid;gap:8px;min-width:0}
+.card>*{min-width:0}
+.top{display:flex;align-items:baseline;gap:8px;flex-wrap:wrap}
+.top a{font:700 15.5px var(--mono);color:var(--accent);text-decoration:none;overflow-wrap:anywhere}
+.badge{font-size:11.5px;font-weight:700;border:1px solid currentColor;border-radius:99px;padding:0 9px;white-space:nowrap}
+.badge.waiting{color:var(--wait)}.badge.sent{color:var(--ok)}.badge.replied{color:var(--accent)}
+.badge.meeting{color:var(--warn)}.badge.converted{color:var(--ok);background:color-mix(in srgb,var(--ok) 14%,transparent)}.badge.excluded{color:var(--bad)}
+.nm{font-size:13.5px;overflow-wrap:anywhere}
+.meta{font-size:12px;color:var(--muted);display:flex;gap:2px 12px;flex-wrap:wrap}
+.note{font-size:13px;color:var(--muted);white-space:pre-wrap;overflow-wrap:anywhere}
+.acts{display:flex;gap:6px;flex-wrap:wrap}
+.acts button{border:1px solid var(--line);background:var(--bg);border-radius:9px;padding:5px 12px;font-size:13px;font-weight:700}
+.acts button.go{border-color:var(--ok);color:var(--ok)}
+.acts button.ng{border-color:var(--bad);color:var(--bad)}
+.acts button[disabled]{opacity:.4}
+.empty{color:var(--muted);border:1px dashed var(--line);border-radius:12px;padding:16px;font-size:13.5px}
+.more{justify-self:center}
+details.add{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:8px 14px}
+details.add summary{cursor:pointer;font-weight:700;font-size:13.5px;color:var(--muted)}
+.addf{display:grid;gap:8px;padding-top:10px}
+.addf input,.addf textarea{width:100%;border:1px solid var(--line);border-radius:10px;background:var(--bg);padding:8px 12px}
+.toast{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(20px + env(safe-area-inset-bottom,0px));background:var(--ink);color:var(--bg);padding:8px 16px;border-radius:99px;font-size:13px;z-index:70;max-width:92vw}
+.sync{font-size:11.5px;color:var(--muted)}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>共同営業台帳</h1>
+    <div class="who" id="who" hidden><span id="email"></span><button class="btn" id="logout" type="button">ログアウト</button></div>
+  </header>
+
+  <section class="login" id="login" hidden>
+    <b>Googleでログインしてください</b>
+    <p>mono.create.group@gmail.com（または代表のGoogleアカウント）でサインインします。データの正本は Firestore（sales_candidates）だけで、この端末には保存しません。</p>
+    <button class="btn pri" id="loginBtn" type="button">Googleでログイン</button>
+    <div class="err" id="loginErr"></div>
+  </section>
+
+  <main id="app" hidden>
+    <div class="chips" id="chips" role="group" aria-label="ステータス絞り込み"></div>
+    <div class="tools"><input id="q" type="search" placeholder="ハンドル・名前・ジャンルで検索" autocomplete="off"></div>
+    <div class="sync" id="sync">読み込み中…</div>
+    <div id="list" style="display:grid;gap:10px"></div>
+    <button class="btn more" id="more" type="button" hidden>もっと見る</button>
+    <details class="add">
+      <summary>候補を追加する（既存のハンドルは上書きしません）</summary>
+      <div class="addf">
+        <input id="aHandle" placeholder="@ハンドル" autocomplete="off">
+        <input id="aGenre" placeholder="ジャンル（任意）" autocomplete="off">
+        <input id="aFollowers" type="number" inputmode="numeric" placeholder="フォロワー数（任意）" min="0">
+        <textarea id="aNote" rows="2" placeholder="メモ（任意）"></textarea>
+        <button class="btn pri" id="aGo" type="button">送信待ちとして追加</button>
+      </div>
+    </details>
+  </main>
+</div>
+<div class="toast" id="toast" hidden></div>
+
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore-compat.js"></script>
+<script>
+/* 共同営業台帳。データの正本は Firestore の sales_candidates だけ。
+   安全設計：①初回は必ずリモート取得（onSnapshot）から。初期データ（シード）のリモート書き込みは無い。
+   ②保存は 1候補＝1ドキュメントの部分更新（update）と、存在しない時だけの追加（transaction で exists を確認）だけ。
+   全件置き換え・配列の丸ごと保存・localStorage への保存は無い。 */
+const FIREBASE_CONFIG={apiKey:"AIzaSyA8kjyY8xF4usk5K7TyBfab_wW3EIFr9Z4",authDomain:"editflow-mono-create.firebaseapp.com",projectId:"editflow-mono-create",appId:"1:280142126082:web:3defcc1b0d370b14781b1b"};
+const COLL="sales_candidates";
+const OWNERS=["nakamurakouta512@gmail.com","mono.create.group@gmail.com"];
+const ST={waiting:"送信待ち",sent:"送信済み",replied:"返信",meeting:"商談",converted:"成約",excluded:"除外"};
+const ORDER=["waiting","sent","replied","meeting","converted","excluded"];
+const PAGE=100;
+
+firebase.initializeApp(FIREBASE_CONFIG);
+const auth=firebase.auth(), db=firebase.firestore(), FV=firebase.firestore.FieldValue;
+const $=id=>document.getElementById(id);
+let cands=[], unsub=null, filter="all", query="", shown=PAGE, loaded=false;
+
+function toast(t){const e=$("toast");e.textContent=t;e.hidden=false;clearTimeout(toast._t);toast._t=setTimeout(()=>{e.hidden=true},2600)}
+function el(tag,cls,text){const e=document.createElement(tag);if(cls)e.className=cls;if(text!=null)e.textContent=text;return e}
+function fmtTs(t){if(!t)return"";const d=t.toDate?t.toDate():new Date(t);return d.toLocaleString("ja-JP",{timeZone:"Asia/Tokyo",month:"numeric",day:"numeric",hour:"2-digit",minute:"2-digit"})}
+const hid=h=>String(h||"").trim().replace(/^@+/,"").toLowerCase();
+/* ドキュメントID。Firestore は __x__ 形式を予約語として拒否するので、その時だけ先頭に ~ を付ける */
+const docId=h=>/^__.*__$/.test(h)?"~"+h:h;
+
+/* ---- サインイン ---- */
+function showLogin(msg){ $("login").hidden=false; $("app").hidden=true; $("who").hidden=true; $("loginErr").textContent=msg||""; }
+$("loginBtn").onclick=async()=>{
+  $("loginErr").textContent="";
+  const p=new firebase.auth.GoogleAuthProvider(); p.setCustomParameters({prompt:"select_account"});
+  try{ await auth.signInWithPopup(p); }
+  catch(e){
+    if(e&&(e.code==="auth/popup-blocked"||e.code==="auth/operation-not-supported-in-this-environment")){ try{ await auth.signInWithRedirect(p); return; }catch(e2){ e=e2; } }
+    $("loginErr").textContent="ログインできませんでした："+(e&&e.code||e);
+  }
+};
+$("logout").onclick=()=>auth.signOut();
+auth.onAuthStateChanged(u=>{
+  if(unsub){unsub();unsub=null}
+  cands=[]; loaded=false;
+  if(!u){ showLogin(); return; }
+  const ok=u.emailVerified&&OWNERS.includes((u.email||"").toLowerCase());
+  if(!ok){ showLogin((u.email||"このアカウント")+" には編集の権限がありません。別のアカウントでログインしてください。"); auth.signOut(); return; }
+  $("login").hidden=true; $("app").hidden=false; $("who").hidden=false; $("email").textContent=u.email;
+  start();
+});
+
+/* ---- 読み込み：必ずリモートから。書き込みはしない ---- */
+function start(){
+  $("sync").textContent="読み込み中…";
+  unsub=db.collection(COLL).onSnapshot(snap=>{
+    cands=snap.docs.map(d=>Object.assign({id:d.id},d.data()));
+    loaded=true;
+    const src=snap.metadata.fromCache?"（端末のキャッシュ表示・サーバーへ接続中）":"";
+    $("sync").textContent=cands.length+" 件を読み込みました "+src;
+    render();
+  },e=>{ $("sync").textContent="読み込めませんでした："+(e&&e.code||e); });
+}
+
+/* ---- 表示 ---- */
+function counts(){const c={all:cands.length};for(const k of ORDER)c[k]=0;for(const d of cands)if(c[d.status]!=null)c[d.status]++;return c}
+function sortKey(d){return d.status==="waiting"?[0,d.order==null?1e9:d.order]:[1,-(d.sentAt&&d.sentAt.toMillis?d.sentAt.toMillis():0)]}
+function render(){
+  const c=counts(), box=$("chips"); box.textContent="";
+  for(const k of ["all"].concat(ORDER)){
+    const b=el("button","chip",k==="all"?"すべて":ST[k]); b.type="button"; b.append(el("span","c",String(c[k])));
+    b.setAttribute("aria-pressed",String(filter===k)); b.onclick=()=>{filter=k;shown=PAGE;render()}; box.append(b);
+  }
+  const q=query.trim().toLowerCase();
+  let L=cands.filter(d=>(filter==="all"||d.status===filter)&&(!q||[d.handle,d.name,d.genre,d.note].some(v=>String(v||"").toLowerCase().includes(q))));
+  L.sort((a,b)=>{const x=sortKey(a),y=sortKey(b);return x[0]-y[0]||x[1]-y[1]||(a.id<b.id?-1:1)});
+  const list=$("list"); list.textContent="";
+  if(!L.length) list.append(el("div","empty",loaded?"該当する候補はありません。":"読み込み中…"));
+  for(const d of L.slice(0,shown)) list.append(card(d));
+  $("more").hidden=L.length<=shown; $("more").textContent="もっと見る（残り "+(L.length-shown)+" 件）";
+}
+$("more").onclick=()=>{shown+=PAGE;render()};
+$("q").oninput=e=>{query=e.target.value;shown=PAGE;render()};
+
+function card(d){
+  const c=el("div","card"), top=el("div","top");
+  const a=el("a","","@"+(d.handle||d.id).replace(/^@/,"")); a.href="https://www.instagram.com/"+hid(d.handle||d.id)+"/"; a.target="_blank"; a.rel="noopener";
+  top.append(a, el("span","badge "+d.status,ST[d.status]||d.status)); c.append(top);
+  if(d.name) c.append(el("div","nm",d.name));
+  const m=[]; if(d.genre)m.push(d.genre); if(d.followers!=null&&d.followers!=="")m.push("フォロワー "+Number(d.followers).toLocaleString("ja-JP"));
+  if(d.rank)m.push("ランク "+d.rank); if(d.approved===true)m.push("営業許可");
+  if(d.sentAt)m.push("送信 "+fmtTs(d.sentAt)); if(d.sentFrom)m.push("送信元 "+d.sentFrom); if(d.sentBy)m.push("by "+d.sentBy);
+  if(m.length) c.append(el("div","meta",m.join("　")));
+  if(d.note) c.append(el("div","note",d.note));
+  const acts=el("div","acts");
+  const add=(label,cls,fn)=>{const b=el("button",cls,label);b.type="button";b.onclick=async()=>{b.disabled=true;try{await fn()}finally{b.disabled=false}};acts.append(b)};
+  if(d.status==="waiting"){ add("送った","go",()=>setStatus(d,"sent")); add("除外","ng",()=>setStatus(d,"excluded")); }
+  if(d.status==="sent"){ add("返信あり","",()=>setStatus(d,"replied")); add("除外","ng",()=>setStatus(d,"excluded")); add("送信待ちに戻す","",()=>setStatus(d,"waiting")); }
+  if(d.status==="replied"){ add("商談","",()=>setStatus(d,"meeting")); add("成約","go",()=>setStatus(d,"converted")); add("送信済みに戻す","",()=>setStatus(d,"sent")); }
+  if(d.status==="meeting"){ add("成約","go",()=>setStatus(d,"converted")); add("返信に戻す","",()=>setStatus(d,"replied")); }
+  if(d.status==="converted"){ add("商談に戻す","",()=>setStatus(d,"meeting")); }
+  if(d.status==="excluded"){ add("送信待ちに戻す","",()=>setStatus(d,"waiting")); }
+  add("メモ","",()=>editNote(d));
+  c.append(acts); return c;
+}
+
+/* ---- 書き込み：1候補＝1ドキュメントの部分更新のみ ---- */
+async function setStatus(d,to){
+  const ref=db.collection(COLL).doc(d.id);
+  try{
+    const res=await db.runTransaction(async tx=>{
+      const s=await tx.get(ref);
+      if(!s.exists) throw new Error("候補が見つかりません");
+      const cur=s.data();
+      if(cur.status===to) return "same:"+to;
+      const u={status:to,updatedAt:FV.serverTimestamp()};
+      if(to==="sent"){ u.sentAt=FV.serverTimestamp(); u.sentBy="manual"; u.sentFrom="本人手動"; }
+      if(to==="waiting"){ u.sentAt=FV.delete(); u.sentBy=FV.delete(); u.sentFrom=FV.delete(); }
+      tx.update(ref,u);
+      return cur.status===undefined?"ok":"from:"+cur.status;
+    });
+    toast(res.startsWith("same:")?"すでに「"+ST[to]+"」でした（別の端末・ジョブが先に更新）":"「"+ST[to]+"」にしました");
+  }catch(e){ toast("保存できませんでした："+(e&&(e.code||e.message)||e)); }
+}
+async function editNote(d){
+  const v=prompt("@"+d.id+" のメモ",d.note||""); if(v===null) return;
+  try{ await db.collection(COLL).doc(d.id).update({note:v,updatedAt:FV.serverTimestamp()}); toast("メモを保存しました"); }
+  catch(e){ toast("保存できませんでした："+(e&&(e.code||e.message)||e)); }
+}
+$("aGo").onclick=async()=>{
+  const id=hid($("aHandle").value); if(!id||/[\/\s]/.test(id)){ toast("ハンドルを確認してください"); return; }
+  const f=$("aFollowers").value;
+  const doc={handle:"@"+id,status:"waiting",source:"manual",updatedAt:FV.serverTimestamp()};
+  if($("aGenre").value.trim()) doc.genre=$("aGenre").value.trim();
+  if(f!=="") doc.followers=Number(f);
+  if($("aNote").value.trim()) doc.note=$("aNote").value.trim();
+  const ref=db.collection(COLL).doc(docId(id));
+  try{
+    const made=await db.runTransaction(async tx=>{ const s=await tx.get(ref); if(s.exists) return false; tx.set(ref,doc); return true; });
+    if(made){ toast("@"+id+" を追加しました"); ["aHandle","aGenre","aFollowers","aNote"].forEach(k=>$(k).value=""); }
+    else toast("@"+id+" はすでに登録されています（上書きしません）");
+  }catch(e){ toast("追加できませんでした："+(e&&(e.code||e.message)||e)); }
+};
+</script>
+</body>
+</html>
