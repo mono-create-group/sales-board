@@ -65,6 +65,7 @@ const scArr=sc=>sc.key==="thumb"?tdms:dms;
 const ST_SENT=["sent","replied","meeting","converted"];            /* 送信済み（返信以上を含む） */
 const isSentish=d=>ST_SENT.includes(d.status);
 const SR={sent:0,replied:1,meeting:2,converted:3};
+const ST_JA={waiting:"送信待ち",sent:"送信済み",replied:"返信",meeting:"商談",converted:"成約",excluded:"除外",skipped:"送らない"};
 const swOrd=(a,b)=>(a.order||0)-(b.order||0)||String(a.id).localeCompare(String(b.id));
 const cnt3=()=>({replied:dms.filter(d=>(SR[d.status]||0)>=1).length,talks:dms.filter(d=>(SR[d.status]||0)>=2).length,won:dms.filter(d=>d.status==="converted").length});
 
@@ -93,11 +94,13 @@ async function markDm(d,st){
       const r=refOf(SC_V,d.id), s=await tx.get(r); if(!s.exists) throw new Error("候補が見つかりません");
       const cur=s.data();
       if(cur.status!=="waiting") return "changed:"+cur.status;
+      if(st==="sent"&&(cur.sentAt||cur.sentBy||cur.sentFrom)) return "warn";
       const u={updatedAt:TS()};
       if(st==="sent"){ u.status="sent"; u.sentAt=TS(); u.sentFrom=sender; u.sentBy="manual"; } else { u.status="skipped"; u.skippedAt=TS(); }
       tx.update(r,u); return "ok";
     });
-    if(res!=="ok"){ toast("すでに状態が変わっていました（"+res.replace("changed:","")+"）。表示を更新します"); return; }
+    if(res==="warn"){ toast("@"+hnd(d)+" は送信日時などの記録が残っています。送信済みか確認してから操作してください"); return; }
+    if(res!=="ok"){ const was=res.replace("changed:",""); toast("@"+hnd(d)+" はすでに「"+(ST_JA[was]||was)+"」です（別の端末・ジョブが先に更新）。表示を更新します"); verifyDm(SC_V,d); return; }
     toast(st==="sent"?"送信済みにしました":"送らない相手にしました",{label:"取り消す",fn:async()=>{ try{ await upd(SC_V,d.id,{status:"waiting",sentAt:DEL(),sentFrom:DEL(),sentBy:DEL(),skippedAt:DEL()}); }catch(e){} }});
   }catch(e){ toast("保存できませんでした"); }
 }
@@ -137,6 +140,27 @@ function renderGoal(){
   if(sent>=10&&c.won>0) t.push("あと約 "+Math.ceil((tgt-c.won)/(c.won/sent))+" 通で達成"); else if(sent<10) t.push("実績が出るまで予測なし");
   box.append(el("div","dmsum",t.join("　")));
 }
+/* ---- 開く直前の最新確認：候補ドキュメントをサーバーから取り直し、送信待ち（waiting）で送信の記録も無い時だけ開く ---- */
+const fresh={}; let verifying=false; const FRESH_MS=45000;
+const goOk=id=>{ const f=fresh[id]; return !!f&&!f.err&&f.exists&&f.status==="waiting"&&!f.warn&&Date.now()-f.at<FRESH_MS; };
+async function verifyDm(sc,d){
+  let f;
+  try{
+    const s=await refOf(sc,d.id).get({source:"server"}); const x=s.exists?s.data():null;
+    f={at:Date.now(),exists:!!x,status:x&&x.status,warn:!!(x&&(x.sentAt||x.sentBy||x.sentFrom)),err:false};
+    fresh[d.id]=f;
+    if(x&&x.status!==d.status){ const arr=scArr(sc), i=arr.findIndex(q=>q.id===d.id); if(i>=0) arr[i]=Object.assign({id:d.id},x); render(); }   /* 画面側が古ければ、最新に差し替えて次の人へ */
+  }catch(e){ f={at:0,err:true}; fresh[d.id]=f; }
+  return f;
+}
+const topWaiting=()=>dms.filter(d=>d.status==="waiting").sort(swOrd)[0];
+async function verifyTop(){
+  if(verifying||document.visibilityState!=="visible"||salesSec!=="video"||$("app").hidden) return;
+  const d=topWaiting(); if(!d) return; verifying=true;
+  const sig=()=>{ const f=fresh[d.id]; return (f?[f.exists,f.status,f.warn,f.err].join():"")+"|"+goOk(d.id); };
+  try{ const before=sig(); await verifyDm(SC_V,d); if(before!==sig()) render(); }finally{ verifying=false; }
+}
+setInterval(verifyTop,15000);
 function addPhotoBtn(parent,sc,d){
   const b=el("button","attach",d.hasPhoto===true?"プロフィール画像を差し替える":"プロフィール画像を付ける"); b.type="button"; b.onclick=()=>attachPicker(sc,d); parent.append(b);
 }
@@ -153,9 +177,33 @@ function renderDms(){
     const d=ready[0]; const c=el("div","sales1");
     const who=el("div","who"); who.append(el("b","","@"+hnd(d))); if(d.rank) who.append(el("span","proj","ランク "+d.rank)); if(d.approved===true) who.append(el("span","proj","営業許可")); c.append(who);
     c.append(el("pre","dmtext",d.text||""));
-    const go=document.createElement("a"); go.className="go"; go.textContent="コピーして Instagram で開く"; go.href="https://ig.me/m/"+encodeURIComponent(hnd(d)); go.target="_blank"; go.rel="noopener";
-    go.onclick=async()=>{ pendingDm={id:d.id,handle:hnd(d)}; const ok=await copyText(d.text||""); toast(ok?"コピーしました。貼り付けて送ってください":"コピーできませんでした。「全文を見る」から選んでコピーしてください"); };
+    const go=document.createElement("a"); go.className="go"; go.rel="noopener"; go.target="_blank";
+    const igUrl="https://ig.me/m/"+encodeURIComponent(hnd(d)); const f0=fresh[d.id];
+    if(f0&&f0.warn&&f0.status==="waiting"){ go.textContent="送信の記録が残っています（確認してから開く）"; go.href="#"; go.style.background="var(--warn)"; }
+    else { go.textContent="コピーして Instagram で開く"; go.href=goOk(d.id)?igUrl:"#"; }
+    /* 押した瞬間に必ず、候補ドキュメントをサーバーから取り直す。送信待ちで送信の記録も無い時だけ Instagram を開く */
+    const openIg=()=>{ const w=window.open(igUrl,"_blank"); if(w){ try{ w.opener=null; }catch(e){} return true; } return false; };
+    go.onclick=async ev=>{
+      ev.preventDefault();
+      pendingDm={id:d.id,handle:hnd(d)}; const copyP=copyText(d.text||"");     /* コピーはクリック操作の中で先に始める（スマホのブラウザの制限のため） */
+      toast("最新の状態を確認しています…"); const f=await verifyDm(SC_V,d); const ok=await copyP;
+      if(f.err){ pendingDm=null; toast("最新の状態を確認できませんでした。通信を確かめてからもう一度押してください"); return; }
+      if(!f.exists){ pendingDm=null; toast("@"+hnd(d)+" は台帳に見つかりません"); return; }
+      if(f.status!=="waiting"){ pendingDm=null; toast("@"+hnd(d)+" はすでに「"+(ST_JA[f.status]||f.status)+"」です。開きません。次の人を表示します"); return; }
+      if(f.warn){ pendingDm=null; toast("@"+hnd(d)+" は送信日時などの記録が残っています。送信済みでないか確認してから、下の「それでも開く」で開いてください"); render(); return; }
+      if(openIg()) toast(ok?"コピーしました。貼り付けて送ってください":"コピーできませんでした。DM文を選んでコピーしてください");
+      else toast("ブラウザが開くのを止めました",{label:"Instagram を開く",fn:()=>openIg()});
+    };
+    go.addEventListener("auxclick",ev=>{ if(!goOk(d.id)) ev.preventDefault(); });
     c.append(go);
+    if(f0&&f0.warn&&f0.status==="waiting"){
+      const wn=el("div","note","⚠ この候補は status が「送信待ち」のままですが、送信日時／送信元の記録があります。すでに送信済みの可能性があります。");
+      const force=document.createElement("a"); force.className="calm"; force.textContent="それでも開く（確認済みの場合のみ）"; force.href=igUrl; force.target="_blank"; force.rel="noopener";
+      force.onclick=async()=>{ pendingDm={id:d.id,handle:hnd(d)}; await copyText(d.text||""); };
+      c.append(wn,force);
+    }
+    if(f0&&f0.at) c.append(el("div","calm","最新の状態を確認："+jst(f0.at)+(goOk(d.id)?"（送信待ち・送信の記録なし）":"")));
+    if(!goOk(d.id)) setTimeout(verifyTop,0);
     const sub=el("div","sub2"); const sb=el("button","sent","送った"); sb.onclick=()=>markDm(d,"sent"); const kb=el("button","","送らない"); kb.onclick=()=>markDm(d,"skip"); const xb=el("button","","候補から外す"); xb.onclick=()=>excludeDm(d); sub.append(sb,kb,xb); c.append(sub);
     const pf=document.createElement("a"); pf.className="calm"; pf.textContent="開かないときは、プロフィールから"; pf.href="https://www.instagram.com/"+encodeURIComponent(hnd(d))+"/"; pf.target="_blank"; pf.rel="noopener"; c.append(pf);
     if(d.hasPhoto===true){ const holder=el("div"); c.append(holder); photoOf(SC_V,d).then(src=>{ if(src&&holder.isConnected) holder.append(swShotBtn(src)); }); }
@@ -187,7 +235,7 @@ function showBack(){
   if(!pendingDm) return; const d=dms.find(x=>x.id===pendingDm.id); if(!d||d.status!=="waiting"){ pendingDm=null; return; }
   $("backTxt").textContent="@"+pendingDm.handle+" に送りましたか？"; $("back").hidden=false;
 }
-document.addEventListener("visibilitychange",()=>{ if(document.visibilityState==="visible") showBack(); });
+document.addEventListener("visibilitychange",()=>{ if(document.visibilityState==="visible"){ showBack(); verifyTop(); } });
 window.addEventListener("focus",showBack); window.addEventListener("pageshow",showBack);
 $("backY").onclick=()=>{ const d=dms.find(x=>x.id===(pendingDm&&pendingDm.id)); $("back").hidden=true; pendingDm=null; if(d) markDm(d,"sent"); };
 $("backN").onclick=()=>{ $("back").hidden=true; pendingDm=null; };
